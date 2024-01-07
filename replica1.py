@@ -1,9 +1,9 @@
 import threading
 import time
-from helpers import create_server_socket, listen_connection, send_broadcast, IP, BROADCAST_PORT_SERVER
+from helpers import BROADCAST_PORT_SERVER, create_server_socket, listen_connection, send_broadcast, IP
 
-server_port = 12340
-broadcast_port_bind = 12350
+server_port = 12341
+broadcast_port_bind = 12351
 
 node_addr = f'{IP} {server_port}'
 
