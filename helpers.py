@@ -26,7 +26,7 @@ def init_client_socket(ip, port):
 
 def handle_client(client_socket, addr):
     print(f'accepted connection from {addr}')
-    client_socket.send(bytes('connected successfully'.encode()))
+    # client_socket.send(bytes('connected successfully'.encode()))
     while True:
         data = client_socket.recv(1024)
         if not data:
@@ -34,11 +34,11 @@ def handle_client(client_socket, addr):
             break
         message = data.decode()
         print(f'receive from {addr} : {message}')
-        client_socket.send(bytes(message.encode()))
+        client_socket.send(bytes(f'server reply: {message}'.encode()))
     client_socket.close()
 
 
-def lb_handle_client(client_socket, addr, server_socket):
+def lb_handle_client(client_socket, addr, socket_list, leader_index):
     print(f'accepted connection from {addr}')
     client_socket.send(bytes('connected successfully'.encode()))
     while True:
@@ -48,7 +48,18 @@ def lb_handle_client(client_socket, addr, server_socket):
             break
         message = data.decode()
         print(f'forward this to server: {message}')
-        # server_socket.send(bytes(data))
+        sock_index = leader_index
+        success_forward = False
+        while not success_forward:
+            try:
+                forward_socket = socket_list[sock_index]
+                forward_socket.send(bytes(data))
+                success_forward = True
+            except:
+                sock_index += 1
+        success_forward = False
+        res = forward_socket.recv(1024)
+        client_socket.send(res)
     client_socket.close()
 
 

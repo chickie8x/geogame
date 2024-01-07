@@ -1,10 +1,11 @@
-from helpers import IP, lb_discover_hosts, create_server_socket, send_broadcast,handle_client, BROADCAST_PORT_LB
+from helpers import IP, lb_discover_hosts, create_server_socket, lb_handle_client, send_broadcast,handle_client, BROADCAST_PORT_LB
 import threading
 import socket
 
 
 node_list = []
 node_socket_list = []
+leader_node_socket_index = 0
 lb_port = 12344
 lb_broadcast_port = 12354
 lb_addr = f'{IP} {lb_port}'
@@ -29,7 +30,7 @@ if __name__ == '__main__':
       client, addr = lb_socket.accept()
 
       # Start a new thread to handle the client
-      client_thread = threading.Thread(target=handle_client, args=(client, addr))
+      client_thread = threading.Thread(target=lb_handle_client, args=(client, addr, node_socket_list, leader_node_socket_index))
       client_thread.start()
 
 
