@@ -1,6 +1,8 @@
 import threading
 import socket
 import time
+import random
+
 
 BROADCAST_PORT_SERVER = 12349
 BROADCAST_PORT_LB = 12348
@@ -56,6 +58,7 @@ def lb_handle_client(client_socket, addr, socket_list, leader_index):
                 forward_socket.send(bytes(data))
                 success_forward = True
             except:
+                sock_index = leader_vote(len(socket_list))
                 sock_index += 1
         success_forward = False
         res = forward_socket.recv(1024)
@@ -122,7 +125,7 @@ def discover_hosts():
         client_socket.close()
 
 
-def lb_discover_hosts(node_list, node_threads_list):
+def lb_discover_hosts(node_list, node_threads_list, leader_index):
     # Create a UDP socket
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
@@ -142,18 +145,31 @@ def lb_discover_hosts(node_list, node_threads_list):
                 [ip, port] = data.decode().split(' ')
                 node_thread = init_client_socket(ip, port) 
                 node_threads_list.append(node_thread)
+                leader_index = leader_vote(node_threads_list.__len__())
                 print(node_threads_list)
     except:
         print('error occurs, can not listen to broadcast')
 
 
-def lcr_vote(nodes):
-    # The LCR (Leader, Circular, Right) Algorithm is a simple algorithm used to elect a leader in a distributed system.
-    # Each participant (player) is initially assigned a unique identifier (e.g., player ID).
-    # Participants are organized in a circular manner.
-    # Participants pass a token (ID) with their vote to their right neighbor.
-    # If a participant receives a vote, it compares its own ID with the received vote. If the received ID is greater, the participant passes the vote to its right neighbor. If the received ID is smaller, the participant discards the received vote.
-    # If a participant has the highest ID among its neighbors, it becomes the leader.
-    
-    pass
+
+# LRC voting 
+class LCRLeaderElection:
+    def __init__(self, num_nodes):
+        self.num_nodes = num_nodes
+        self.identifiers = [random.randint(1, 100) for _ in range(num_nodes)]
+        self.leader = None
+        self.election_lock = threading.Lock()
+
+    def start_election(self):
+        with self.election_lock:
+            self.leader = 0
+            for i in range(self.num_nodes):
+                if self.identifiers[i] >= self.identifiers[self.leader]:
+                    self.leader = i
+            return self.leader
+
+
+def leader_vote(num_nodes):
+    election = LCRLeaderElection(num_nodes)
+    return election.start_election()
 
