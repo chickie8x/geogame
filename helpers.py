@@ -257,9 +257,8 @@ def create_game(players):
 
 # start the game 
 def game_start(questions, lb_socket):
-    lb_socket.send(pickle.dumps({'command':'sendall', 'params':"***GAME'S STARTING, GET READY***"}))
+    lb_socket.send(pickle.dumps({'command':'sendall', 'params':"***GAME'S STARTING, GET READY***\nYou have 10s for each question"}))
     time.sleep(3)
     for question in questions:
         lb_socket.send(pickle.dumps({'command': 'sendall', 'params':question['question']}))
-        print(question['question'])
         time.sleep(2)
