@@ -1,12 +1,16 @@
+import json
 import threading
 import socket
 import time
 import random
+import csv
+import pickle
 
 
 BROADCAST_PORT_SERVER = 12349
 BROADCAST_PORT_LB = 12348
 IP = '127.0.0.1'
+game_id = {'game_id': None}
 
 def create_server_socket(ip, port):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -25,64 +29,105 @@ def init_client_socket(ip, port):
 
 
 
-
+# node handle clients
 def handle_client(client_socket, addr):
     print(f'accepted connection from {addr}')
-    # client_socket.send(bytes('connected successfully'.encode()))
     while True:
-        data = client_socket.recv(1024)
-        if not data:
-            print('socket closed')
+        try:
+            data = client_socket.recv(1024)
+            if not data:
+                print('socket closed')
+                break
+            message = pickle.loads(data)
+
+            #handle messages 
+            print(f'receive from {addr} : {message}')
+
+            if message['command'] == 'creategame':
+                game = create_game(message['params'])
+                client_socket.send(pickle.dumps(game))
+                game_start(questions['easy'], client_socket)
+            elif message['command'] == 'answer':
+                client_socket.send(pickle.dumps({ 'command':'response', 'params':{'username':message['params']['username'],'content':message['params']['content']}}))
+
+        except ConnectionResetError as e:
+            print(e)
             break
-        message = data.decode()
-        print(f'receive from {addr} : {message}')
-        client_socket.send(bytes(f'server reply: {message}'.encode()))
     client_socket.close()
 
 
-def lb_handle_client(client_socket, addr, socket_list, leader_index):
+# loadbalancer handle client
+def lb_handle_client(client_socket, addr, message_queue, users):
     print(f'accepted connection from {addr}')
-    client_socket.send(bytes('connected successfully'.encode()))
+
+    username = f"user{random.randint(1000,2000)}"
+    users[username] = client_socket
+    client_socket.send(pickle.dumps({'command':'setuser', 'params':username}))
+
+    #when number of clients >= 3 , send command start the game 
+    if len(users) >= 3 and game_id['game_id'] is None:
+        username_list = [name for name in users.keys()]
+        message_queue.append({'command': 'creategame', 'params': username_list})
+
     while True:
-        data = client_socket.recv(1024)
-        if not data:
-            print('socket closed')
+        try: 
+            data = client_socket.recv(1024)
+            if not data:
+                print('socket closed')
+                break
+            message_queue.append(pickle.loads(data))
+            # message = data
+            # print(f'forward this to server: {message}')
+            # sock_index = leader_index
+            # success_forward = False
+            # while not success_forward:
+            #     try:
+            #         forward_socket = socket_list[sock_index]
+            #         forward_socket.send(bytes(data))
+            #         success_forward = True
+            #     except:
+            #         sock_index = leader_vote(len(socket_list))
+            # success_forward = False
+
+        except ConnectionResetError as e:
+            print(e)
             break
-        message = data.decode()
-        print(f'forward this to server: {message}')
-        sock_index = leader_index
-        success_forward = False
-        while not success_forward:
-            try:
-                forward_socket = socket_list[sock_index]
-                forward_socket.send(bytes(data))
-                success_forward = True
-            except:
-                sock_index = leader_vote(len(socket_list))
-                sock_index += 1
-        success_forward = False
-        res = forward_socket.recv(1024)
-        client_socket.send(res)
     client_socket.close()
 
 
-def listen_connection(socket):
+def handle_client_queue(cmes_queue, node_socket):
     while True:
-        client, addr = socket.accept()
+        if len(cmes_queue) >0:
+            mes = cmes_queue.pop(0)
+            node_socket.send(pickle.dumps(mes))
+            
 
-        # start new thread to handle client 
-        client_thread = threading.Thread(target=handle_client, args=(client, addr,))
-        client_thread.start()
-
-
-def send_message(socket):
+def handle_server_queue(smes_queue, users):
     while True:
-        message = input("Enter a message to send to the server (type 'exit' to close): ")
+        if len(smes_queue) >0:
+            mes = smes_queue.pop(0)
+            print(mes)
+            if mes['command'] == 'gamecreated':
+                game_id['game_id'] = mes['params']['game_id']
+                print(game_id)
+            elif mes['command'] == 'response':
+                c_socket = users[mes['params']['username']]
+                c_socket.send(pickle.dumps({'command':'concac','content': mes['params']['content']}))
+            elif mes['command'] == 'sendall':
+                for user in users.keys():
+                    c_socket = users[user]
+                    c_socket.send(pickle.dumps({'command':'sendall','content': mes['params']}))
+
+
+def send_message(socket, username):
+    while True:
+        s = input("Enter a message to send to the server (type 'exit' to close): ")
     
-        if message.lower() == 'exit':
+        if s.lower() == 'exit':
             break
         try:
-            socket.send(message.encode())
+            message = pickle.dumps({'command':'answer','params':{'username':username['username'], 'content':s}})
+            socket.send(message)
         except:
             print('can not send mesage to server')
         time.sleep(0.2)
@@ -146,9 +191,18 @@ def lb_discover_hosts(node_list, node_threads_list, leader_index):
                 node_thread = init_client_socket(ip, port) 
                 node_threads_list.append(node_thread)
                 leader_index = leader_vote(node_threads_list.__len__())
-                print(node_threads_list)
     except:
         print('error occurs, can not listen to broadcast')
+
+
+# listen to node message
+def lb_listen_to_node(node_list, index, s_queue):
+    while True:
+        socket = node_list[index['index']]
+        data = socket.recv(1024)
+        if not data:
+            print('socket closed')
+        s_queue.append(pickle.loads(data))
 
 
 
@@ -173,3 +227,39 @@ def leader_vote(num_nodes):
     election = LCRLeaderElection(num_nodes)
     return election.start_election()
 
+
+# processing csv data
+questions = {'easy':[], 'medium':[], 'hard':[]}
+
+with open('question.csv', 'r', encoding='utf8') as f:
+    csv_reader = csv.reader(f, delimiter=',')
+    keys = []
+    for idx, item in enumerate(csv_reader):
+        if idx == 0:
+            keys = item
+        else:
+            obj = dict(zip(keys, item))
+            questions[item[1]].append(obj)
+
+
+
+# create_game function that return game ID
+def create_game(players):
+    game_id = random.randint(1000, 2000)
+    with open('gamestate.json', 'w') as f:
+        game_state = {}
+        game_state['game_id'] = game_id
+        game_state['scores'] = {}
+        for player in players:
+            game_state['scores'][player] = 0
+        json.dump(game_state, f)
+    return {'command': 'gamecreated', 'params': {'game_id': game_id}}
+
+# start the game 
+def game_start(questions, lb_socket):
+    lb_socket.send(pickle.dumps({'command':'sendall', 'params':"***GAME'S STARTING, GET READY***"}))
+    time.sleep(3)
+    for question in questions:
+        lb_socket.send(pickle.dumps({'command': 'sendall', 'params':question['question']}))
+        print(question['question'])
+        time.sleep(2)
