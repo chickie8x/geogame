@@ -38,7 +38,7 @@ if __name__ == '__main__':
    listen_node_mes_thread.start()
 
    # start handle client message queue thread
-   handle_message_client_thread = threading.Thread(target=handle_client_queue, args=(client_mes_queue, node_socket))
+   handle_message_client_thread = threading.Thread(target=handle_client_queue, args=(client_mes_queue, node_socket_list, leader_node_socket_index))
    handle_message_client_thread.start()
 
    # start server message queue thread

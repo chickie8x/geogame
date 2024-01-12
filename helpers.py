@@ -95,12 +95,16 @@ def lb_handle_client(client_socket, addr, message_queue, users):
     client_socket.close()
 
 
-def handle_client_queue(cmes_queue, node_socket):
+def handle_client_queue(cmes_queue, n_list, index):
     while True:
+        sk = n_list[index['index']]
         if len(cmes_queue) >0:
             mes = cmes_queue.pop(0)
-            node_socket.send(pickle.dumps(mes))
-            
+            try:
+                sk.send(pickle.dumps(mes))
+            except:
+                n_list.remove(sk)
+                index['index'] = leader_vote(len(n_list))
 
 def handle_server_queue(smes_queue, users):
     while True:
@@ -130,7 +134,7 @@ def send_message(socket, username):
             socket.send(message)
         except:
             print('can not send mesage to server')
-        time.sleep(0.2)
+        time.sleep(0.5)
     socket.close()
 
 
@@ -199,11 +203,13 @@ def lb_discover_hosts(node_list, node_threads_list, leader_index):
 def lb_listen_to_node(node_list, index, s_queue):
     while True:
         socket = node_list[index['index']]
-        data = socket.recv(1024)
-        if not data:
-            print('socket closed')
-        s_queue.append(pickle.loads(data))
-
+        try:
+            data = socket.recv(1024)
+            if not data:
+                print('socket closed')
+            s_queue.append(pickle.loads(data))
+        except:
+            index['index'] = leader_vote(len(node_list))
 
 
 # LRC voting 
