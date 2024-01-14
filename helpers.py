@@ -62,7 +62,7 @@ def handle_client(client_socket, addr, conf):
                 q = questions
                 game = create_game(message['params'], conf, q)
                 client_socket.send(pickle.dumps(game))
-                game_start(client_socket)
+                # game_start(client_socket)
 
             elif message['command'] == 'answer':
                 with open('gamestate.json', 'r') as f:
@@ -126,7 +126,8 @@ def handle_server_queue(smes_queue, users):
             print(mes)
             if mes['command'] == 'gamecreated':
                 game_id['game_id'] = mes['params']['game_id']
-                print(game_id)
+                game_start(smes_queue)
+                print('game_created mes')
             elif mes['command'] == 'response':
                 c_socket = users[mes['params']['username']]
                 c_socket.send(pickle.dumps({'command':'reply','content': mes['params']['content']}))
@@ -267,14 +268,14 @@ def create_game(players, conf, questions):
 
 
 # start the game 
-def game_start(lb_socket):
-    lb_socket.send(pickle.dumps({'command':'sendall', 'params':"\n\n*** GAME'S STARTING, GET READY ***\nYou have 10s for each question\nType the correct answer answer \n"}))
+def game_start(s_queue):
+    s_queue.append({'command':'sendall', 'params':"\n\n*** GAME'S STARTING, GET READY ***\nYou have 10s for each question\nType the correct answer answer \n"})
     time.sleep(3)
-    send_question_thread = threading.Thread(target=send_question, args=(lb_socket,))
+    send_question_thread = threading.Thread(target=send_question, args=(s_queue,))
     send_question_thread.start()
     
 
-def send_question(sk):
+def send_question(s_queue):
     with open('gamestate.json', 'r') as f:
         x = json.load(f)
         num_of_quest = len(x['questions'])
@@ -292,7 +293,7 @@ def send_question(sk):
         obj['answers'] = answers
         obj['correct_index'] = correct_answer_index
 
-        sk.send(pickle.dumps({'command': 'question', 'params':obj}))
+        s_queue.append({'command': 'question', 'params':obj})
 
         time.sleep(5)
         if counter <= num_of_quest-1:
@@ -304,10 +305,10 @@ def send_question(sk):
             with open('gamestate.json', 'w') as f:
                 z['current_quest_index'] += 1 
                 json.dump(z, f)
+
     # determine the winner of the game 
-    
     with open('gamestate.json') as f:
         get_data = json.load(f)
         scores = get_data['scores']
         sorted_score = sorted(scores.items(), key=lambda x:x[1], reverse=True)
-    sk.send(pickle.dumps({'command': 'sendall', 'params':f"\n\n********\nThe winner of the game is {sorted_score[0][0]} with score of {sorted_score[0][1]}\n********\n\n"}))
+    s_queue.append({'command': 'sendall', 'params':f"\n\n********\nThe winner of the game is {sorted_score[0][0]} with score of {sorted_score[0][1]}\n********\n\n"})

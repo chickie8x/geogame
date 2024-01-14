@@ -9,7 +9,6 @@ node_addr = f'{IP} {server_port}'
 
 game_conf = {
     'difficulty': 'medium',
-    'num_of_quest': len(questions['medium']),
     'num_of_player': 3,
     'countdown': 10
 }
