@@ -10,7 +10,6 @@ lb_port = 12344
 lb_broadcast_port = 12354
 lb_addr = f'{IP} {lb_port}'
 client_list = {}
-game_id = {'id': None}
 client_mes_queue = []
 server_mes_queue = []
 

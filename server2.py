@@ -25,6 +25,6 @@ if __name__ == '__main__':
     while True:
         client, addr = server.accept()
         # start new thread to handle client 
-        client_thread = threading.Thread(target=handle_client, args=(client, addr))
+        client_thread = threading.Thread(target=handle_client, args=(client, addr, game_conf))
         client_thread.start()
     

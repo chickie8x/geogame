@@ -12,6 +12,21 @@ BROADCAST_PORT_LB = 12348
 IP = '127.0.0.1'
 game_id = {'game_id': None}
 
+# processing csv data
+questions = {'easy':[], 'medium':[], 'hard':[]}
+
+with open('question.csv', 'r', encoding='utf8') as f:
+    csv_reader = csv.reader(f, delimiter=',')
+    keys = []
+    for idx, item in enumerate(csv_reader):
+        if idx == 0:
+            keys = item
+        else:
+            obj = dict(zip(keys, item))
+            questions[item[1]].append(obj)
+
+
+
 def create_server_socket(ip, port):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((ip, port))
@@ -30,7 +45,7 @@ def init_client_socket(ip, port):
 
 
 # node handle clients
-def handle_client(client_socket, addr):
+def handle_client(client_socket, addr, conf):
     print(f'accepted connection from {addr}')
     while True:
         try:
@@ -44,12 +59,23 @@ def handle_client(client_socket, addr):
             print(f'receive from {addr} : {message}')
 
             if message['command'] == 'creategame':
-                game = create_game(message['params'])
+                q = questions
+                game = create_game(message['params'], conf, q)
                 client_socket.send(pickle.dumps(game))
-                game_start(questions['easy'], client_socket)
-            elif message['command'] == 'answer':
-                client_socket.send(pickle.dumps({ 'command':'response', 'params':{'username':message['params']['username'],'content':message['params']['content']}}))
+                game_start(client_socket)
 
+            elif message['command'] == 'answer':
+                with open('gamestate.json', 'r') as f:
+                    obj = json.load(f)
+                answer = message['params']['content']
+                question = obj['questions'][obj['current_quest_index']]
+                if answer == question['correct_answer']:
+                    with open('gamestate.json', 'w') as f:
+                        obj['scores'][message['params']['username']] += 1
+                        json.dump(obj, f)
+                    client_socket.send(pickle.dumps({ 'command':'response', 'params':{'username':message['params']['username'],'content':f'your answer is corrected, your score: {obj["scores"][message["params"]["username"]]}'}}))
+                else:
+                    client_socket.send(pickle.dumps({ 'command':'response', 'params':{'username':message['params']['username'],'content':f'your answer is incorrected, you score: {obj["scores"][message["params"]["username"]]}'}}))
         except ConnectionResetError as e:
             print(e)
             break
@@ -64,7 +90,7 @@ def lb_handle_client(client_socket, addr, message_queue, users):
     users[username] = client_socket
     client_socket.send(pickle.dumps({'command':'setuser', 'params':username}))
 
-    #when number of clients >= 3 , send command start the game 
+    #when number of clients >= 3 and no game's on going , send command start the game 
     if len(users) >= 3 and game_id['game_id'] is None:
         username_list = [name for name in users.keys()]
         message_queue.append({'command': 'creategame', 'params': username_list})
@@ -76,19 +102,6 @@ def lb_handle_client(client_socket, addr, message_queue, users):
                 print('socket closed')
                 break
             message_queue.append(pickle.loads(data))
-            # message = data
-            # print(f'forward this to server: {message}')
-            # sock_index = leader_index
-            # success_forward = False
-            # while not success_forward:
-            #     try:
-            #         forward_socket = socket_list[sock_index]
-            #         forward_socket.send(bytes(data))
-            #         success_forward = True
-            #     except:
-            #         sock_index = leader_vote(len(socket_list))
-            # success_forward = False
-
         except ConnectionResetError as e:
             print(e)
             break
@@ -116,25 +129,28 @@ def handle_server_queue(smes_queue, users):
                 print(game_id)
             elif mes['command'] == 'response':
                 c_socket = users[mes['params']['username']]
-                c_socket.send(pickle.dumps({'command':'concac','content': mes['params']['content']}))
+                c_socket.send(pickle.dumps({'command':'reply','content': mes['params']['content']}))
             elif mes['command'] == 'sendall':
                 for user in users.keys():
                     c_socket = users[user]
                     c_socket.send(pickle.dumps({'command':'sendall','content': mes['params']}))
+            elif mes['command'] == 'question':
+                for user in users.keys():
+                    c_socket = users[user]
+                    c_socket.send(pickle.dumps({'command':'question','content': mes['params']}))
 
 
 def send_message(socket, username):
     while True:
-        s = input("Enter a message to send to the server (type 'exit' to close): ")
-    
+        s = input("Type the correct answer (type 'exit' to close): \n")
         if s.lower() == 'exit':
-            break
+            break  
         try:
             message = pickle.dumps({'command':'answer','params':{'username':username['username'], 'content':s}})
             socket.send(message)
         except:
             print('can not send mesage to server')
-        time.sleep(0.5)
+        time.sleep(0.2)
     socket.close()
 
 
@@ -234,37 +250,64 @@ def leader_vote(num_nodes):
     return election.start_election()
 
 
-# processing csv data
-questions = {'easy':[], 'medium':[], 'hard':[]}
-
-with open('question.csv', 'r', encoding='utf8') as f:
-    csv_reader = csv.reader(f, delimiter=',')
-    keys = []
-    for idx, item in enumerate(csv_reader):
-        if idx == 0:
-            keys = item
-        else:
-            obj = dict(zip(keys, item))
-            questions[item[1]].append(obj)
-
-
-
 # create_game function that return game ID
-def create_game(players):
+def create_game(players, conf, questions):
     game_id = random.randint(1000, 2000)
     with open('gamestate.json', 'w') as f:
         game_state = {}
         game_state['game_id'] = game_id
         game_state['scores'] = {}
+        
         for player in players:
             game_state['scores'][player] = 0
+        game_state['questions'] = questions[conf['difficulty']]
+        game_state['current_quest_index'] = 0
         json.dump(game_state, f)
     return {'command': 'gamecreated', 'params': {'game_id': game_id}}
 
+
 # start the game 
-def game_start(questions, lb_socket):
-    lb_socket.send(pickle.dumps({'command':'sendall', 'params':"***GAME'S STARTING, GET READY***\nYou have 10s for each question"}))
+def game_start(lb_socket):
+    lb_socket.send(pickle.dumps({'command':'sendall', 'params':"\n\n*** GAME'S STARTING, GET READY ***\nYou have 10s for each question\nType the correct answer answer \n"}))
     time.sleep(3)
-    for question in questions:
-        lb_socket.send(pickle.dumps({'command': 'sendall', 'params':question['question']}))
-        time.sleep(2)
+    send_question_thread = threading.Thread(target=send_question, args=(lb_socket,))
+    send_question_thread.start()
+    
+
+def send_question(sk):
+    with open('gamestate.json', 'r') as f:
+        x = json.load(f)
+        num_of_quest = len(x['questions'])
+    counter = 0
+    while counter < num_of_quest:
+        with open('gamestate.json', 'r') as f:
+            data = json.load(f)
+            game_questions = data['questions']
+        current_quest = game_questions[data['current_quest_index']]
+        answers = [current_quest['incorrect_answers_1'], current_quest['incorrect_answers_2'], current_quest['incorrect_answers_3']]
+        correct_answer_index = random.randint(0, 3)
+        answers.insert(correct_answer_index, current_quest['correct_answer'])
+        obj = {}
+        obj['question']= current_quest['question']
+        obj['answers'] = answers
+        obj['correct_index'] = correct_answer_index
+
+        sk.send(pickle.dumps({'command': 'question', 'params':obj}))
+
+        time.sleep(5)
+        if counter <= num_of_quest-1:
+            counter +=1
+
+            with open('gamestate.json', 'r') as f:
+                z = json.load(f)
+        
+            with open('gamestate.json', 'w') as f:
+                z['current_quest_index'] += 1 
+                json.dump(z, f)
+    # determine the winner of the game 
+    
+    with open('gamestate.json') as f:
+        get_data = json.load(f)
+        scores = get_data['scores']
+        sorted_score = sorted(scores.items(), key=lambda x:x[1], reverse=True)
+    sk.send(pickle.dumps({'command': 'sendall', 'params':f"\n\n********\nThe winner of the game is {sorted_score[0][0]} with score of {sorted_score[0][1]}\n********\n\n"}))

@@ -11,7 +11,6 @@ if __name__ == '__main__':
     send_mes_thread = threading.Thread(target=send_message, args=(c_socket, username))
     send_mes_thread.start()
 
-
     while True:
         try:
             data = c_socket.recv(1024)
@@ -20,8 +19,14 @@ if __name__ == '__main__':
             res = pickle.loads(data)
             if res['command'] == 'setuser':
                 username['username'] = pickle.loads(data)['params']
-            else:
-                print(f'\n{res["content"]}\n')
+            elif res['command'] == 'sendall':
+                print(res['content'])
+            elif res['command'] == 'question':
+                print(f"Question: {res['content']['question']}")
+                for i in range(len(res['content']['answers'])):
+                    print(f"{i+1}. {res['content']['answers'][i]}")
+            elif res['command'] == 'reply':
+                print(res['content'])
 
         except ConnectionResetError as e:
             print(e)
