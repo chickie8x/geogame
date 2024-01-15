@@ -62,7 +62,6 @@ def handle_client(client_socket, addr, conf):
                 q = questions
                 game = create_game(message['params'], conf, q)
                 client_socket.send(pickle.dumps(game))
-                # game_start(client_socket)
 
             elif message['command'] == 'answer':
                 with open('gamestate.json', 'r') as f:
@@ -86,22 +85,28 @@ def handle_client(client_socket, addr, conf):
 def lb_handle_client(client_socket, addr, message_queue, users):
     print(f'accepted connection from {addr}')
 
-    username = f"user{random.randint(1000,2000)}"
-    users[username] = client_socket
-    client_socket.send(pickle.dumps({'command':'setuser', 'params':username}))
-
-    #when number of clients >= 3 and no game's on going , send command start the game 
-    if len(users) >= 3 and game_id['game_id'] is None:
-        username_list = [name for name in users.keys()]
-        message_queue.append({'command': 'creategame', 'params': username_list})
-
     while True:
         try: 
             data = client_socket.recv(1024)
             if not data:
                 print('socket closed')
                 break
-            message_queue.append(pickle.loads(data))
+            mes = pickle.loads(data)
+            if mes["command"] == "username_request":
+                username = f"user{random.randint(1000,2000)}"
+                users[username] = client_socket
+                client_socket.send(pickle.dumps({'command':'setuser', 'params':username}))
+                if len(users) >= 3 and game_id['game_id'] is None:
+                    username_list = [name for name in users.keys()]
+                    message_queue.append({'command': 'creategame', 'params': username_list})
+            elif mes["command"] == "send_username":
+                users[mes["params"]["username"]] = client_socket
+                print(mes["params"]["username"])
+                if len(users) >= 3 and game_id['game_id'] is None:
+                    username_list = [name for name in users.keys()]
+                    message_queue.append({'command': 'creategame', 'params': username_list})
+            elif game_id["game_id"]:
+                message_queue.append(pickle.loads(data)) 
         except ConnectionResetError as e:
             print(e)
             break
@@ -311,4 +316,7 @@ def send_question(s_queue):
         get_data = json.load(f)
         scores = get_data['scores']
         sorted_score = sorted(scores.items(), key=lambda x:x[1], reverse=True)
-    s_queue.append({'command': 'sendall', 'params':f"\n\n********\nThe winner of the game is {sorted_score[0][0]} with score of {sorted_score[0][1]}\n********\n\n"})
+    if sorted_score[0][1] > 0:
+        s_queue.append({'command': 'sendall', 'params':f"\n\n********\nThe winner of the game is {sorted_score[0][0]} with score of {sorted_score[0][1]}\n\n********\n\n"})
+    else:
+        s_queue.append({'command': 'sendall', 'params': '\n\n*********\nNo winner, no one answers have corrected answer.\nGame ends\n\n********\n\n'})
