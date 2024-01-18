@@ -142,8 +142,11 @@ def handle_server_queue(smes_queue, users):
                     c_socket.send(pickle.dumps({'command':'sendall','content': mes['params']}))
             elif mes['command'] == 'question':
                 for user in users.keys():
-                    c_socket = users[user]
-                    c_socket.send(pickle.dumps({'command':'question','content': mes['params']}))
+                    try:
+                        c_socket = users[user]
+                        c_socket.send(pickle.dumps({'command':'question','content': mes['params']}))
+                    except :
+                        pass
 
 
 def send_message(socket, username):

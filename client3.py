@@ -43,7 +43,7 @@ if __name__ == '__main__':
             elif res['command'] == 'reply':
                 print(res['content'])
 
-        except ConnectionResetError as e:
+        except ConnectionAbortedError as e:
             print(e)
             break
     c_socket.close()
